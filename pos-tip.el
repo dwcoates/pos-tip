@@ -424,19 +424,25 @@ DX specifies horizontal offset in pixel.
 DY specifies vertical offset in pixel. This makes the calculations done
 without considering the height of object at POS, so the object might be
 hidden by the tooltip."
+  ;TODO: May want to replace display-coor with a function that determines the value
+  ;; based on a confine-to-monitor-p predicate. Or not. I can't imagine why someone
+  ;; would want the tooltip to be split in half between their monitor bevels.
   (let* ((frame (window-frame (or window (selected-window))))
 	 (w32-frame (eq (pos-tip-window-system frame) 'w32))
 	 (relative (or pos-tip-use-relative-coordinates
 		       (eq frame-coordinates 'relative)
 		       (and w32-frame
 			    (null pos-tip-w32-saved-max-width-height))))
-	 (frame-coord (or (and relative '(0 . 0))
+     (display-coor (cons
+                    (pos-tip-x-display-pixels-X frame)
+                    (pos-tip-x-display-pixels-Y frame)))
+     (frame-coord (or (and relative display-coor)
 			  frame-coordinates
 			  (pos-tip-frame-top-left-coordinates frame)
 			  (progn
 			    (setq relative t
-				  pos-tip-use-relative-coordinates t)
-			  '(0 . 0))))
+                      pos-tip-use-relative-coordinates t)
+                display-coor)))
 	 (posn (posn-at-point (or pos (window-point window)) window))
 	 (line (cdr (posn-actual-col-row posn)))
 	 (line-height (and line
@@ -447,7 +453,7 @@ hidden by the tooltip."
 		  (let ((geom (pos-visible-in-window-p
 			       (or pos (window-point window)) window t)))
 		    (and geom (cons (car geom) (cadr geom))))
-		  '(0 . 0)))
+		  display-coor))
 	 (x (+ (car frame-coord)
 	       (car (window-inside-pixel-edges window))
 	       (car x-y)
@@ -483,8 +489,10 @@ hidden by the tooltip."
       (setq xmax (car pos-tip-w32-saved-max-width-height)
 	    ymax (cdr pos-tip-w32-saved-max-width-height)))
      (t
-      (setq xmax (x-display-pixel-width frame)
-	    ymax (x-display-pixel-height frame))))
+      (setq xmax (+ (pos-tip-x-display-pixels-X frame)
+                    (pos-tip-x-display-pixels-width frame))
+            ymax (+ (pos-tip-x-display-pixels-Y frame)
+                    (pos-tip-x-display-pixels-height frame)))))
     (setq pos-tip-upperside-p (> (+ y (or pixel-height 0))
 				 ymax))
     (cons (max 0 (min x (- xmax (or pixel-width 0))))
@@ -638,7 +646,7 @@ Example:
 			      (w32-frame
 			       (car pos-tip-w32-saved-max-width-height))
 			      (t
-			       (x-display-pixel-width frame))))
+			       (pos-tip-x-display-pixels-width frame))))
 			 border)
 		      (frame-char-width frame)))
 		(/ (- (or pixel-height
@@ -810,15 +818,38 @@ Example:
 	      height (1+ height)))
       (cons width height))))
 
+(defun pos-tip-x-display-pixels-width (&optional frame)
+  "Return the width in pixels of diplay currently containing FRAME.
+Omitting FRAME means use current frame."
+  (elt (assoc 'geometry (frame-monitor-attributes frame)) 3))
+
+(defun pos-tip-x-display-pixels-height (&optional frame)
+  "Return the height in pixels of display currently containing FRAME.
+Omitting FRAME means use current frame."
+  (elt (assoc 'geometry (frame-monitor-attributes frame)) 4))
+
+(defun pos-tip-x-display-pixels-X (&optional frame)
+  "Return X position of display containing FRAME within display array.
+In other words, this focuses on containing monitor in multiple display setup."
+  (elt (assoc 'geometry (frame-monitor-attributes frame)) 1))
+
+(defun pos-tip-x-display-pixels-Y (&optional frame)
+  "Return Y position of display containing FRAME within display array.
+In other words, this focuses on containing monitor in multiple display setup."
+    (elt (assoc 'geometry (frame-monitor-attributes frame)) 2))
+
 (defun pos-tip-x-display-width (&optional frame)
   "Return maximum column number in tooltip which occupies the full width
 of display. Omitting FRAME means use display that selected frame is in."
-  (1+ (/ (x-display-pixel-width frame) (frame-char-width frame))))
+  (1+ (/ (pos-tip-x-display-pixels-width frame)
+         (frame-char-width frame))))
 
 (defun pos-tip-x-display-height (&optional frame)
   "Return maximum row number in tooltip which occupies the full height
 of display. Omitting FRAME means use display that selected frame is in."
-  (1+ (/ (x-display-pixel-height frame) (frame-char-height frame))))
+  (1+ (/ (pos-tip-x-display-pixels-height frame)
+         (frame-char-height frame))))
+
 
 (defun pos-tip-tooltip-width (width char-width)
   "Calculate tooltip pixel width."
